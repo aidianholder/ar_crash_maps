@@ -1,0 +1,138 @@
+# ============================================================================
+# Martin tile server configuration
+#
+# Connection comes from the DATABASE_URL environment variable (see .env.example),
+# so the same file runs on this Mac or the Linux production box unchanged.
+#   local:  postgresql://aidianholder@localhost:5432/crashes
+#   prod:   postgresql://user:pass@db-host:5432/crashes
+#
+# Run:  DATABASE_URL=... martin --config martin/config.yaml
+# ============================================================================
+
+listen_addresses: "0.0.0.0:3000"
+
+postgres:
+  connection_string: ${DATABASE_URL}
+  pool_size: 20
+
+  # Explicit sources only — the heavy 38-column base table is deliberately NOT
+  # published. Zoom bands overlap by a level or two so client overzoom stays
+  # smooth; the frontend layers pick the exact switch points.
+  tables:
+    hex_8km:
+      schema: public
+      table: hex_8km
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POLYGON
+      bounds: [-94.7, 32.9, -89.6, 36.6]
+      minzoom: 0
+      maxzoom: 8
+      extent: 4096
+      buffer: 64
+      clip_geom: true
+      properties:
+        year: int4
+        crash_count: int8
+        fatalities: int8
+        injuries: int8
+        cmv_count: int8
+        ped_count: int8
+        impaired_count: int8
+
+    hex_3km:
+      schema: public
+      table: hex_3km
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POLYGON
+      bounds: [-94.7, 32.9, -89.6, 36.6]
+      minzoom: 6
+      maxzoom: 10
+      extent: 4096
+      buffer: 64
+      clip_geom: true
+      properties:
+        year: int4
+        crash_count: int8
+        fatalities: int8
+        injuries: int8
+        cmv_count: int8
+        ped_count: int8
+        impaired_count: int8
+
+    hex_1km:
+      schema: public
+      table: hex_1km
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POLYGON
+      bounds: [-94.7, 32.9, -89.6, 36.6]
+      minzoom: 9
+      maxzoom: 13
+      extent: 4096
+      buffer: 64
+      clip_geom: true
+      properties:
+        year: int4
+        crash_count: int8
+        fatalities: int8
+        injuries: int8
+        cmv_count: int8
+        ped_count: int8
+        impaired_count: int8
+
+    hex_400m:
+      schema: public
+      table: hex_400m
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POLYGON
+      bounds: [-94.7, 32.9, -89.6, 36.6]
+      minzoom: 11
+      maxzoom: 14
+      extent: 4096
+      buffer: 64
+      clip_geom: true
+      properties:
+        year: int4
+        crash_count: int8
+        fatalities: int8
+        injuries: int8
+        cmv_count: int8
+        ped_count: int8
+        impaired_count: int8
+
+    crash_points:
+      schema: public
+      table: crash_points
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POINT
+      id_column: objectid
+      bounds: [-94.7, 32.9, -89.6, 36.6]
+      minzoom: 11
+      maxzoom: 22
+      extent: 4096
+      buffer: 64
+      clip_geom: true
+      properties:
+        crashseverity: text
+        year: int4
+        numfatalities: int4
+        numserinj: int4
+        county: text
+        speedrelated: bool
+        impairedrelated: bool
+        roadwaydeparturerelated: bool
+        intersectionrelated: bool
+        cmvrelated: bool
+        motorcyclerelated: bool
+        nonmotoristrelated: bool
+        crashdate: text
+        crashtime: text
+        city: text
+        agencyname: text
+        roadwaysurfaceconidtion: text
+        lightingconditions: text
+        crashmanner: text

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Arkansas Crash Density</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .panel {
+    position: absolute; top: 12px; left: 12px; z-index: 1;
+    background: rgba(255,255,255,0.94); padding: 12px 14px; border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 13px; max-width: 240px;
+  }
+  .panel h1 { font-size: 14px; margin: 0 0 8px; }
+  .panel label { font-weight: 600; display: block; margin-bottom: 4px; }
+  select { width: 100%; padding: 4px; font-size: 13px; }
+  .legend { margin-top: 10px; }
+  .legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .legend .swatch { width: 16px; height: 12px; border: 1px solid rgba(0,0,0,0.2); }
+  .legend .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .meta { margin-top: 10px; color: #444; font-size: 11px; line-height: 1.5; }
+  .maplibregl-popup-content { font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h1>Arkansas Crashes (2021–2025)</h1>
+  <label for="measure">Filter by</label>
+  <select id="measure">
+    <option value="crash_count">Crash count</option>
+    <option value="fatalities">Fatalities</option>
+    <option value="injuries">Serious injuries</option>
+    <option value="ped_count">Pedestrian</option>
+    <option value="cmv_count">Commercial vehicle</option>
+    <option value="impaired_count">Impaired / DUI</option>
+  </select>
+  <label for="year" style="margin-top:10px;">Year</label>
+  <select id="year">
+    <option value="0">All years</option>
+    <option value="2021">2021</option>
+    <option value="2022">2022</option>
+    <option value="2023">2023</option>
+    <option value="2024">2024</option>
+    <option value="2025">2025</option>
+  </select>
+  <div class="legend" id="legend"></div>
+  <div class="meta">
+    <div id="layerinfo">—</div>
+    <div>Hex bins &lt; z13, individual crashes at z13+.</div>
+  </div>
+</div>
+
+<script>
+// Tile base: same-origin "/tiles" behind nginx in production, or override for a
+// native Martin, e.g. index.html?tiles=http://localhost:3000
+const TILE_BASE = new URLSearchParams(location.search).get('tiles') || '/tiles';
+
+// Sequential warm ramp (light -> dark red), colorblind-safe-ish for density.
+const RAMP = ['#ffffb2', '#fecc5c', '#fd8d3c', '#f03b20', '#bd0026', '#7a0177'];
+
+// Each "Filter by" option maps to a hex measure column (drives the color ramp
+// and, with the >0 filter, which hexes show) and a point filter (which crashes
+// render at high zoom). Pseudo-log breakpoints read well across all four hex
+// resolutions; finer hexes simply use the lower range.
+const MEASURES = {
+  crash_count:    { label: 'Crash count',        breaks: [1, 10, 50, 250, 1500, 8000], pointFilter: null },
+  fatalities:     { label: 'Fatalities',         breaks: [1, 2, 5, 15, 40, 120],       pointFilter: ['>', ['get', 'numfatalities'], 0] },
+  injuries:       { label: 'Serious injuries',   breaks: [1, 3, 10, 40, 150, 600],     pointFilter: ['>', ['get', 'numserinj'], 0] },
+  ped_count:      { label: 'Pedestrian',         breaks: [1, 3, 10, 30, 100, 400],     pointFilter: ['get', 'nonmotoristrelated'] },
+  cmv_count:      { label: 'Commercial vehicle', breaks: [1, 5, 20, 75, 250, 1000],    pointFilter: ['get', 'cmvrelated'] },
+  impaired_count: { label: 'Impaired / DUI',     breaks: [1, 4, 15, 50, 150, 600],     pointFilter: ['get', 'impairedrelated'] },
+};
+
+const HEX_LAYERS = ['lyr-hex-8km', 'lyr-hex-3km', 'lyr-hex-1km', 'lyr-hex-400m'];
+let currentMeasure = 'crash_count';   // kept in sync for the hex hover popup
+
+// Crash severity (KABCO). Single source of truth for BOTH the point layer's
+// colors and the severity legend, so they can't drift. `value` is the exact DB
+// string; anything unmatched falls to SEVERITY_DEFAULT.
+const SEVERITY = [
+  { value: 'Fatal Injury (K)',              label: 'Fatal (K)',           color: '#7a0177' },
+  { value: 'Suspected Serious Injury (A)',  label: 'Serious injury (A)',  color: '#bd0026' },
+  { value: 'Suspected Minor Injury (B)',    label: 'Minor injury (B)',    color: '#f03b20' },
+  { value: 'Possible Injury (C)',           label: 'Possible injury (C)', color: '#fd8d3c' },
+];
+const SEVERITY_DEFAULT = { label: 'No apparent injury (O)', color: '#4575b4' };
+const POINT_ZOOM = 13;   // points appear at z >= 13; legend swaps to severity here
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/positron',
+  center: [-92.3, 34.9],   // central Arkansas
+  zoom: 6.4,
+  maxBounds: [[-97.0, 31.5], [-87.5, 38.0]],
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'imperial' }), 'bottom-left');
+
+function fillColorExpr(measure) {
+  const b = MEASURES[measure].breaks;
+  return [
+    'interpolate', ['linear'], ['get', measure],
+    b[0], RAMP[0], b[1], RAMP[1], b[2], RAMP[2],
+    b[3], RAMP[3], b[4], RAMP[4], b[5], RAMP[5],
+  ];
+}
+
+function buildLegend(measure) {
+  const b = MEASURES[measure].breaks;
+  const rows = RAMP.map((c, i) => {
+    const lo = b[i];
+    const hi = b[i + 1];
+    const label = hi ? `${lo.toLocaleString()}–${hi.toLocaleString()}` : `${lo.toLocaleString()}+`;
+    return `<div class="row"><span class="swatch" style="background:${c}"></span>${label}</div>`;
+  }).join('');
+  document.getElementById('legend').innerHTML =
+    `<label>${MEASURES[measure].label}</label>${rows}`;
+}
+
+function buildSeverityLegend() {
+  const rows = [...SEVERITY, SEVERITY_DEFAULT].map(s =>
+    `<div class="row"><span class="swatch dot" style="background:${s.color}"></span>${s.label}</div>`
+  ).join('');
+  document.getElementById('legend').innerHTML = `<label>Crash severity</label>${rows}`;
+}
+
+// Show the severity legend at point zoom, the measure legend at hex zoom.
+// `force` rebuilds even when the mode is unchanged (used on dropdown changes).
+let legendMode = null;
+function refreshLegend(force) {
+  const mode = map.getZoom() >= POINT_ZOOM ? 'severity' : 'measure';
+  if (!force && mode === legendMode) return;
+  legendMode = mode;
+  if (mode === 'severity') buildSeverityLegend();
+  else buildLegend(document.getElementById('measure').value);
+}
+
+// Apply both dropdowns to hexes (color by measure + hide zero/other-year hexes)
+// and points (filter by category AND year). Called on load and on any change.
+function applyState() {
+  const measure = document.getElementById('measure').value;
+  const year = parseInt(document.getElementById('year').value, 10);
+  currentMeasure = measure;
+
+  const expr = fillColorExpr(measure);
+  // Hexes: show only the selected year bucket (0 = all-years rollup) and only
+  // hexes with a non-zero value for the chosen measure.
+  const hexFilter = ['all', ['==', ['get', 'year'], year], ['>', ['get', measure], 0]];
+  for (const id of HEX_LAYERS) {
+    map.setPaintProperty(id, 'fill-color', expr);
+    map.setFilter(id, hexFilter);
+  }
+
+  // Points: AND the category filter with the year filter (omit year clause for All).
+  const clauses = [];
+  const pf = MEASURES[measure].pointFilter;
+  if (pf) clauses.push(pf);
+  if (year !== 0) clauses.push(['==', ['get', 'year'], year]);
+  map.setFilter('lyr-points', clauses.length ? ['all', ...clauses] : null);
+
+  refreshLegend(true);
+}
+
+function addHexLayer(id, source, sourceLayer, minzoom, maxzoom) {
+  map.addLayer({
+    id, type: 'fill', source, 'source-layer': sourceLayer, minzoom, maxzoom,
+    paint: {
+      'fill-color': fillColorExpr('crash_count'),
+      'fill-opacity': 0.65,
+      'fill-outline-color': 'rgba(0,0,0,0.15)',
+    },
+  });
+}
+
+map.on('load', () => {
+  // Vector sources — explicit tile templates (proxy-safe, no TileJSON needed).
+  map.addSource('hex_8km',  { type: 'vector', tiles: [`${TILE_BASE}/hex_8km/{z}/{x}/{y}`],  minzoom: 0, maxzoom: 8 });
+  map.addSource('hex_3km',  { type: 'vector', tiles: [`${TILE_BASE}/hex_3km/{z}/{x}/{y}`],  minzoom: 6, maxzoom: 10 });
+  map.addSource('hex_1km',  { type: 'vector', tiles: [`${TILE_BASE}/hex_1km/{z}/{x}/{y}`],  minzoom: 9, maxzoom: 13 });
+  map.addSource('hex_400m', { type: 'vector', tiles: [`${TILE_BASE}/hex_400m/{z}/{x}/{y}`], minzoom: 11, maxzoom: 14 });
+  map.addSource('crash_points', { type: 'vector', tiles: [`${TILE_BASE}/crash_points/{z}/{x}/{y}`], minzoom: 11, maxzoom: 16 });
+
+  // Hex bands (visible one at a time; MapLibre layer maxzoom is exclusive).
+  addHexLayer('lyr-hex-8km',  'hex_8km',  'hex_8km',  0, 8);
+  addHexLayer('lyr-hex-3km',  'hex_3km',  'hex_3km',  8, 10);
+  addHexLayer('lyr-hex-1km',  'hex_1km',  'hex_1km',  10, 12);
+  addHexLayer('lyr-hex-400m', 'hex_400m', 'hex_400m', 12, 13);
+
+  // Individual crashes at high zoom, colored by severity.
+  map.addLayer({
+    id: 'lyr-points', type: 'circle', source: 'crash_points', 'source-layer': 'crash_points',
+    minzoom: 13,
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2.5, 18, 6],
+      'circle-color': [
+        'match', ['get', 'crashseverity'],
+        ...SEVERITY.flatMap(s => [s.value, s.color]),
+        SEVERITY_DEFAULT.color,   // No Apparent Injury (O) + anything else
+      ],
+      'circle-opacity': 0.8,
+      'circle-stroke-width': 0.5,
+      'circle-stroke-color': 'rgba(0,0,0,0.4)',
+    },
+  });
+
+  // Initialize paint, filters and legend from the current dropdown values.
+  applyState();
+  updateLayerInfo();
+
+  // Hex hover popup. Shows the visible year bucket's totals, plus the active
+  // category count when a category (not a base measure) is selected.
+  const CATEGORY_LABELS = { ped_count: 'pedestrian', cmv_count: 'commercial-vehicle', impaired_count: 'impaired' };
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+  for (const id of HEX_LAYERS) {
+    map.on('mousemove', id, (e) => {
+      map.getCanvas().style.cursor = 'pointer';
+      const p = e.features[0].properties;
+      let html = `<b>${(+p.crash_count).toLocaleString()}</b> crashes<br>` +
+                 `${p.fatalities} fatalities · ${p.injuries} serious injuries`;
+      if (CATEGORY_LABELS[currentMeasure]) {
+        html += `<br>${(+p[currentMeasure]).toLocaleString()} ${CATEGORY_LABELS[currentMeasure]}`;
+      }
+      popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+    });
+    map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; popup.remove(); });
+  }
+
+  // Point click popup. `row` renders a labeled line only when the value exists,
+  // so missing/blank fields are silently skipped rather than showing "null".
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const row = (label, val) =>
+    (val === null || val === undefined || val === '') ? '' : `<br><b>${label}:</b> ${esc(val)}`;
+  map.on('click', 'lyr-points', (e) => {
+    const p = e.features[0].properties;
+    const when = [p.crashdate, p.crashtime].filter(Boolean).join(' · ');
+    const place = [p.city, p.county ? p.county + ' County' : null].filter(Boolean).join(', ');
+    const html =
+      `<b>${esc(p.crashseverity)}</b>` +
+      (when ? `<br>${esc(when)}` : '') +
+      (place ? `<br>${esc(place)}` : '') +
+      row('Description', p.crashmanner) +
+      row('Conditions', p.roadwaysurfaceconidtion) +
+      row('Lighting', p.lightingconditions) +
+      row('Agency', p.agencyname) +
+      `<br><b>Fatalities:</b> ${p.numfatalities} · <b>Serious inj:</b> ${p.numserinj}`;
+    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+  });
+  map.on('mouseenter', 'lyr-points', () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', 'lyr-points', () => map.getCanvas().style.cursor = '');
+});
+
+function updateLayerInfo() {
+  const z = map.getZoom();
+  let active = z < 8 ? '8 km hexes' : z < 10 ? '3 km hexes' : z < 12 ? '1 km hexes'
+            : z < 13 ? '400 m hexes' : 'individual crashes';
+  document.getElementById('layerinfo').textContent = `z${z.toFixed(1)} · ${active}`;
+}
+map.on('zoom', () => { updateLayerInfo(); refreshLegend(false); });
+
+document.getElementById('measure').addEventListener('change', applyState);
+document.getElementById('year').addEventListener('change', applyState);
+</script>
+</body>
+</html>

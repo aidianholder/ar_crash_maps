@@ -1,0 +1,43 @@
+-- 01a_staging.sql — raw text staging table matching the ARDOT CSV column order.
+-- Every column is text so the CSV loads without any cast errors; 01b casts.
+DROP TABLE IF EXISTS crashes_staging;
+CREATE TABLE crashes_staging (
+    objectid                 text,
+    statecasenumber          text,
+    localcasenumber          text,
+    crashdate                text,
+    crashtime                text,
+    year                     text,
+    month                    text,
+    dayofweek                text,
+    mpo                      text,
+    county                   text,
+    city                     text,
+    crashseverity            text,
+    asp_troop                text,
+    agencyname               text,
+    intersectingstreetname   text,
+    intersectingstreetroute  text,
+    latitude                 text,
+    longitude                text,
+    ah_roadid                text,
+    ah_logmile               text,
+    numserinj                text,
+    numfatalities            text,
+    ruralurbanarea           text,
+    lightingconditions       text,
+    roadwaysurfaceconidtion  text,   -- (sic) misspelling preserved from source
+    crashmanner              text,
+    roadsystem               text,
+    speedrelated             text,
+    workzonerelated          text,
+    roadwaydeparturerelated  text,
+    intersectionrelated      text,
+    unrestrainedrelated      text,
+    impairedrelated          text,
+    nonmotoristrelated       text,
+    nonmotoristtype          text,
+    cmvrelated               text,
+    motorcyclerelated        text,
+    globalid                 text
+);

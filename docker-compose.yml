@@ -1,0 +1,37 @@
+# ============================================================================
+# Production-portable serving stack: Martin (tiles) behind nginx (static + proxy).
+#
+# nginx serves the MapLibre page and proxies /tiles/* to Martin on the same
+# origin, so there is no CORS to configure. The Postgres database is external
+# (Postgres.app locally, or your managed/Linux Postgres in prod) — point
+# DATABASE_URL at it in .env.
+#
+#   cp .env.example .env      # edit DATABASE_URL
+#   docker compose up -d
+#   open http://localhost:8080
+# ============================================================================
+services:
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["--config", "/config/config.yaml"]
+    volumes:
+      - ./martin/config.yaml:/config/config.yaml:ro
+    expose:
+      - "3000"
+    # Uncomment to reach a database running on the host machine (Docker Desktop):
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - martin
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro

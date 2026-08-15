@@ -90,6 +90,12 @@ const SEVERITY = [
 const SEVERITY_DEFAULT = { label: 'No apparent injury (O)', color: '#4575b4' };
 const POINT_ZOOM = 13;   // points appear at z >= 13; legend swaps to severity here
 
+// Arkansas cutout: a world-covering fill with the state as a hole masks
+// everything outside Arkansas. MASK_COLOR matches the page background so the
+// state appears to float; WORLD_RING is the mask's outer ring.
+const MASK_COLOR = '#ffffff';
+const WORLD_RING = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+
 const map = new maplibregl.Map({
   container: 'map',
   style: 'https://tiles.openfreemap.org/styles/positron',
@@ -251,6 +257,30 @@ map.on('load', () => {
   });
   map.on('mouseenter', 'lyr-points', () => map.getCanvas().style.cursor = 'pointer');
   map.on('mouseleave', 'lyr-points', () => map.getCanvas().style.cursor = '');
+
+  // Arkansas cutout mask + boundary outline (added last, so they sit on top).
+  fetch('arkansas.geojson').then(r => r.json()).then(gj => {
+    const geom = gj.geometry || gj;
+    const holes = geom.type === 'MultiPolygon'
+      ? geom.coordinates.map(poly => poly[0])   // each piece's outer ring becomes a hole
+      : [geom.coordinates[0]];
+    map.addSource('ar-mask', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [WORLD_RING, ...holes] } },
+    });
+    map.addLayer({
+      id: 'ar-mask-fill', type: 'fill', source: 'ar-mask',
+      paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 1 },
+    });
+    map.addSource('ar-outline', { type: 'geojson', data: gj });
+    map.addLayer({
+      id: 'ar-outline-line', type: 'line', source: 'ar-outline',
+      paint: {
+        'line-color': '#333333',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2],
+      },
+    });
+  });
 });
 
 function updateLayerInfo() {

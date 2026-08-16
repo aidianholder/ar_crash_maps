@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Crash map — diagnostics</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link href="vendor/maplibre-gl.css" rel="stylesheet" />
+<script src="vendor/maplibre-gl.js"></script>
+<style>
+  html,body{margin:0;height:100%;font:13px/1.5 system-ui,sans-serif}
+  #wrap{display:flex;height:100%}
+  #map{flex:1 1 60%;position:relative}
+  #report{flex:0 0 40%;max-width:560px;overflow:auto;padding:12px 16px;background:#111;color:#ddd;font:12px/1.5 ui-monospace,Menlo,monospace}
+  #report h1{font-size:14px;color:#fff;margin:0 0 8px}
+  .ok{color:#7ee787}.bad{color:#ff7b72}.warn{color:#ffd479}.dim{color:#888}
+  pre{white-space:pre-wrap;word-break:break-word;margin:2px 0}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="report"><h1>Crash map diagnostics</h1><div id="lines"></div></div>
+</div>
+<script>
+// Absolutized exactly as index.html does — a relative URL cannot be resolved in
+// MapLibre's worker, which is itself one of the failures this page diagnoses.
+var TILE_BASE = new URL(
+  new URLSearchParams(location.search).get('tiles') || '/tiles',
+  location.href
+).href.replace(/\/+$/, '');
+var lines = document.getElementById('lines');
+function say(text, cls) {
+  var p = document.createElement('pre');
+  if (cls) p.className = cls;
+  p.textContent = text;
+  lines.appendChild(p);
+}
+function stamp() { return '[' + (performance.now() / 1000).toFixed(1) + 's] '; }
+
+say('page origin:  ' + location.origin);
+say('tile base:    ' + TILE_BASE);
+say('user agent:   ' + navigator.userAgent, 'dim');
+
+// --- WebGL support ---------------------------------------------------------
+try {
+  var c = document.createElement('canvas');
+  var gl2 = !!c.getContext('webgl2');
+  var gl1 = !!(c.getContext('webgl') || c.getContext('experimental-webgl'));
+  say('WebGL2: ' + gl2 + '   WebGL1: ' + gl1, gl2 ? 'ok' : 'bad');
+} catch (e) { say('WebGL check threw: ' + e.message, 'bad'); }
+
+// --- raw network reachability, independent of MapLibre ---------------------
+function probe(url, label) {
+  var t0 = performance.now();
+  return fetch(url).then(function (r) {
+    return r.arrayBuffer().then(function (b) {
+      say(label + ': HTTP ' + r.status + '  ' + b.byteLength + ' bytes  ' +
+          (r.headers.get('content-type') || '?') + '  (' + Math.round(performance.now() - t0) + 'ms)',
+          r.ok && b.byteLength > 0 ? 'ok' : 'bad');
+    });
+  }).catch(function (e) {
+    say(label + ': FETCH FAILED — ' + e.message, 'bad');
+  });
+}
+say('--- direct fetches ---');
+probe(TILE_BASE + '/hex_8km/6/15/25', 'hex_8km z6 tile');
+probe(TILE_BASE + '/crash_points/13/1996/3252', 'crash_points z13 tile');
+probe('arkansas.geojson', 'arkansas.geojson');
+probe('https://tiles.openfreemap.org/styles/positron', 'basemap style');
+
+// --- the map itself --------------------------------------------------------
+var SOURCES = ['hex_8km', 'hex_3km', 'hex_1km', 'hex_400m', 'crash_points'];
+var map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/positron',
+  center: [-92.3, 34.9],
+  zoom: 6.4,
+});
+
+map.on('error', function (e) {
+  var m = (e && e.error && e.error.message) || 'unknown';
+  say(stamp() + 'MAP ERROR: ' + m + (e.sourceId ? '  [source: ' + e.sourceId + ']' : ''), 'bad');
+});
+map.on('style.load', function () { say(stamp() + 'style.load fired', 'ok'); });
+
+map.on('load', function () {
+  say(stamp() + 'load fired — adding crash sources', 'ok');
+
+  map.addSource('hex_8km',      { type: 'vector', tiles: [TILE_BASE + '/hex_8km/{z}/{x}/{y}'],      minzoom: 0,  maxzoom: 8 });
+  map.addSource('hex_3km',      { type: 'vector', tiles: [TILE_BASE + '/hex_3km/{z}/{x}/{y}'],      minzoom: 6,  maxzoom: 10 });
+  map.addSource('hex_1km',      { type: 'vector', tiles: [TILE_BASE + '/hex_1km/{z}/{x}/{y}'],      minzoom: 9,  maxzoom: 13 });
+  map.addSource('hex_400m',     { type: 'vector', tiles: [TILE_BASE + '/hex_400m/{z}/{x}/{y}'],     minzoom: 11, maxzoom: 14 });
+  map.addSource('crash_points', { type: 'vector', tiles: [TILE_BASE + '/crash_points/{z}/{x}/{y}'], minzoom: 11, maxzoom: 16 });
+
+  // Deliberately UNFILTERED and fully opaque, to separate "no data" from
+  // "data present but filtered/painted invisibly".
+  map.addLayer({
+    id: 'probe-hex', type: 'fill', source: 'hex_8km', 'source-layer': 'hex_8km',
+    minzoom: 0, maxzoom: 8,
+    paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.6, 'fill-outline-color': '#000' },
+  });
+
+  setTimeout(report, 6000);
+});
+
+function report() {
+  say('--- after 6s ---');
+  say('map.loaded(): ' + map.loaded() + '   styleLoaded: ' + map.isStyleLoaded());
+  say('zoom: ' + map.getZoom().toFixed(2) + '   center: ' + JSON.stringify(map.getCenter()));
+
+  SOURCES.forEach(function (id) {
+    var loaded;
+    try { loaded = map.isSourceLoaded(id); } catch (e) { loaded = 'threw: ' + e.message; }
+    var feats = [];
+    try { feats = map.querySourceFeatures(id, { sourceLayer: id }); } catch (e) { feats = []; }
+    say(id + ': isSourceLoaded=' + loaded + '  querySourceFeatures=' + feats.length,
+        feats.length ? 'ok' : 'warn');
+    if (feats.length) {
+      say('   sample props: ' + JSON.stringify(feats[0].properties), 'dim');
+      var p = feats[0].properties;
+      var types = {};
+      for (var k in p) types[k] = typeof p[k];
+      say('   prop types:   ' + JSON.stringify(types), 'dim');
+    }
+  });
+
+  var rendered = map.queryRenderedFeatures({ layers: ['probe-hex'] });
+  say('queryRenderedFeatures(probe-hex): ' + rendered.length,
+      rendered.length ? 'ok' : 'bad');
+
+  say('');
+  say(rendered.length
+    ? 'VERDICT: tiles load and render. If the real map shows nothing, the cause is the filter/paint or the mask layer.'
+    : 'VERDICT: the unfiltered probe layer rendered nothing — tiles are not reaching the renderer. See the errors above.',
+    rendered.length ? 'ok' : 'bad');
+}
+</script>
+</body>
+</html>

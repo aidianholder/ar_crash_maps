@@ -57,7 +57,17 @@
 <script>
 // Tile base: same-origin "/tiles" behind nginx in production, or override for a
 // native Martin, e.g. index.html?tiles=http://localhost:3000
-const TILE_BASE = new URLSearchParams(location.search).get('tiles') || '/tiles';
+//
+// Absolutized deliberately. MapLibre loads vector tiles and URL-based GeoJSON
+// sources from a Web Worker, whose base URL is a blob: — a relative URL cannot be
+// resolved there and every tile fails with "... is not a valid URL" before a
+// request is sent (the source still reports isSourceLoaded=true, with zero
+// features). Main-thread fetches are unaffected, which makes the failure look
+// selective. Any URL handed to a source must therefore be absolute.
+const TILE_BASE = new URL(
+  new URLSearchParams(location.search).get('tiles') || '/tiles',
+  location.href
+).href.replace(/\/+$/, '');
 
 // Sequential warm ramp (light -> dark red), colorblind-safe-ish for density.
 const RAMP = ['#ffffb2', '#fecc5c', '#fd8d3c', '#f03b20', '#bd0026', '#7a0177'];
@@ -291,7 +301,9 @@ map.on('load', () => {
     const cityFont = fonts.find(f => f.some(n => /Regular/i.test(n)))
                   || fonts.find(f => f.some(n => /Medium/i.test(n)))
                   || fonts[0] || ['Noto Sans Regular'];
-    map.addSource('ar-cities', { type: 'geojson', data: 'ar_cities.geojson' });
+    // Absolute for the same worker reason as TILE_BASE — a GeoJSON source given
+    // a relative URL is silently never fetched.
+    map.addSource('ar-cities', { type: 'geojson', data: new URL('ar_cities.geojson', location.href).href });
     map.addLayer({
       id: 'lyr-cities', type: 'symbol', source: 'ar-cities',
       maxzoom: POINT_ZOOM,                 // hex zoom levels only

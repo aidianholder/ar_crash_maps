@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Crash map embed — integration example</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  /* Deliberately opinionated page styles, to prove the embed is insulated from
+     whatever CSS the host page (arkansasonline.com) already has. */
+  body { max-width: 780px; margin: 0 auto; padding: 24px; font: 17px/1.6 Georgia, serif; color: #222; }
+  h1 { font-size: 30px; line-height: 1.2; }
+  select { font-size: 28px; text-transform: uppercase; border: 4px dashed red; }
+  label { font-weight: 300; text-transform: uppercase; letter-spacing: 2px; }
+  pre { background: #f4f4f4; padding: 12px; overflow-x: auto; font-size: 13px; }
+  .caption { font-size: 14px; color: #666; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Where Arkansas crashes happen</h1>
+
+<p>Body copy above the map. Everything below the headline is the host page — the
+map is the two lines of markup shown at the bottom.</p>
+
+<!-- ==== the entire integration ==== -->
+<div id="ar-crash-map" data-height="70vh"></div>
+<script src="embed.js"></script>
+<!-- ================================= -->
+
+<p class="caption">Crashes reported to ARDOT, 2021–2025. Hexagons are equal-area;
+zoom past z13 for individual crashes.</p>
+
+<p>Body copy below the map continues here.</p>
+
+<h2>How to add it to a page</h2>
+
+<pre>&lt;div id="ar-crash-map" data-height="70vh"&gt;&lt;/div&gt;
+&lt;script src="https://maps.arkansasonline.com/crashes/embed.js"&gt;&lt;/script&gt;</pre>
+
+<p>Optional attributes on the container:</p>
+
+<pre>&lt;div id="ar-crash-map"
+     data-height="600px"
+     data-center="-94.16,36.06"   &lt;!-- lng,lat --&gt;
+     data-zoom="10"
+     data-measure="ped_count"     &lt;!-- crash_count | fatalities | injuries |
+                                       ped_count | cmv_count | impaired_count --&gt;
+     data-year="2024"
+     data-title="Pedestrian crashes in Fayetteville"&gt;&lt;/div&gt;</pre>
+
+<p>For more than one map on a page, give each container the
+<code>ar-crash-map</code> class instead of the id. To place a map yourself
+(inside a tab or a lazily-rendered module), skip the auto-init and call
+<code>ARCrashMap.init(element)</code> once the container is in the DOM.</p>
+
+</body>
+</html>

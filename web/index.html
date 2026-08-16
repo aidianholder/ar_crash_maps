@@ -280,6 +280,40 @@ map.on('load', () => {
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2],
       },
     });
+
+    // Arkansas city labels (Census places, 2023 pop). Above the mask so edge-city
+    // labels are never clipped; hex zooms only (hidden once points take over).
+    // Reuse a basemap font so the glyphs are guaranteed to exist.
+    const fonts = map.getStyle().layers
+      .filter(l => l.type === 'symbol')
+      .map(l => map.getLayoutProperty(l.id, 'text-font'))
+      .filter(Boolean);
+    const cityFont = fonts.find(f => f.some(n => /Regular/i.test(n)))
+                  || fonts.find(f => f.some(n => /Medium/i.test(n)))
+                  || fonts[0] || ['Noto Sans Regular'];
+    map.addSource('ar-cities', { type: 'geojson', data: 'ar_cities.geojson' });
+    map.addLayer({
+      id: 'lyr-cities', type: 'symbol', source: 'ar-cities',
+      maxzoom: POINT_ZOOM,                 // hex zoom levels only
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': cityFont,
+        // moderate size scaling by population
+        'text-size': ['interpolate', ['linear'], ['get', 'pop'],
+                      1000, 10, 10000, 12.5, 50000, 15, 100000, 17, 200000, 20],
+        'text-max-width': 8,
+        'text-padding': 10,   // larger collision margin -> fewer labels at low zoom
+        'symbol-sort-key': ['-', 0, ['get', 'pop']],  // larger cities placed first, win collisions
+        'text-allow-overlap': false,        // collision detection on (hide overlapping labels)
+        'icon-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#000000',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.4,
+        'text-halo-blur': 0.4,
+      },
+    });
   });
 });
 

@@ -208,8 +208,13 @@ filters side by side (stacking when the container is narrow), a centered note,
 the map, then a hexagon badge showing the current bin size next to a horizontal
 legend, and a source line. `data-height` therefore sizes the **map**, not the
 whole block, which is taller by the height of the controls and legend.
-`data-title=""`, `data-hint=""` and `data-source=""` drop those lines. The badge
-hides itself at z13+, where crashes are drawn individually and nothing is binned.
+`data-title=""`, `data-hint=""` and `data-source=""` drop those lines.
+
+Three pieces of chrome track the same `POINT_ZOOM` (z13) threshold and switch
+together, so the page never describes a view the reader isn't looking at: the
+legend swaps to the KABCO severity key, the hex badge hides (nothing is binned at
+that zoom), and the note changes from `data-hint` ("Zoom in for details on
+individual crashes") to `data-hint-points` ("Click a dot for crash details").
 
 `index.html` can't simply be pasted into another page — the embed exists because
 three things in it only work on the map's own origin:

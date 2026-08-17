@@ -31,7 +31,9 @@
  *   data-measure="crash_count"   initial "Filter by" selection
  *   data-year="0"                initial year (0 = all years)
  *   data-title="..."             heading above the filters; "" removes it
- *   data-hint="..."              centered note above the map; "" removes it
+ *   data-hint="..."              centered note above the map at hex zooms
+ *   data-hint-points="..."       the same note at z13+, where crashes are drawn
+ *                                individually; "" blanks either state
  *   data-source="..."            credit line under the legend; "" removes it
  * =========================================================================== */
 (function () {
@@ -185,6 +187,8 @@
       // Pass data-title="" (or data-hint="", data-source="") to omit a line entirely.
       title:   d.title   != null ? d.title : (g.title != null ? g.title : 'Arkansas Crashes (2021–2025)'),
       hint:    d.hint    != null ? d.hint  : (g.hint  != null ? g.hint  : 'Zoom in for details on individual crashes'),
+      hintPoints: d.hintPoints != null ? d.hintPoints
+                 : (g.hintPoints != null ? g.hintPoints : 'Click a dot for crash details'),
       source:  d.source  != null ? d.source : (g.source != null ? g.source : 'Source: Arkansas State Patrol via ARDOT'),
     };
   }
@@ -228,7 +232,13 @@
     root.appendChild(controls);
     var measureSel = measure.select, yearSel = year.select;
 
-    if (opts.hint) root.appendChild(el('div', 'arcm-hint', esc(opts.hint)));
+    // The note swaps at POINT_ZOOM (see updateLayerInfo) — telling the reader to
+    // zoom in is wrong once they are already looking at individual crashes.
+    var hintEl = null;
+    if (opts.hint || opts.hintPoints) {
+      hintEl = el('div', 'arcm-hint', esc(opts.hint));
+      root.appendChild(hintEl);
+    }
 
     // data-height sizes the MAP, not the whole widget — the controls and legend
     // now sit outside it, so sizing the widget would squeeze the map instead.
@@ -338,6 +348,12 @@
       var label = z < 8 ? '8 km' : z < 10 ? '3 km' : z < 12 ? '1 km' : z < POINT_ZOOM ? '400 m' : null;
       badge.style.display = label ? '' : 'none';
       if (label) hexText.textContent = label;
+
+      if (hintEl) {
+        var text = z >= POINT_ZOOM ? opts.hintPoints : opts.hint;
+        hintEl.textContent = text;
+        hintEl.style.display = text ? '' : 'none';   // either line may be blanked
+      }
     }
 
     map.on('load', function () {

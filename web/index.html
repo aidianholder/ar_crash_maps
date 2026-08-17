@@ -70,7 +70,7 @@
     </div>
   </div>
 
-  <div class="hint">Zoom in for details on individual crashes</div>
+  <div class="hint" id="hint">Zoom in for details on individual crashes</div>
 
   <div id="map"></div>
 
@@ -368,10 +368,18 @@ function hexSizeLabel(z) {
   return z < 8 ? '8 km' : z < 10 ? '3 km' : z < 12 ? '1 km' : z < POINT_ZOOM ? '400 m' : null;
 }
 
+// The note above the map tracks the same POINT_ZOOM threshold as the badge and
+// the legend, so all three switch together: telling the reader to zoom in is
+// wrong once they are already looking at individual crashes.
+const HINT_HEX = 'Zoom in for details on individual crashes';
+const HINT_POINTS = 'Click a dot for crash details';
+
 function updateLayerInfo() {
-  const label = hexSizeLabel(map.getZoom());
+  const z = map.getZoom();
+  const label = hexSizeLabel(z);
   document.getElementById('hexbadge').style.display = label ? '' : 'none';
   if (label) document.getElementById('hexsize').textContent = label;
+  document.getElementById('hint').textContent = z >= POINT_ZOOM ? HINT_POINTS : HINT_HEX;
 }
 map.on('zoom', () => { updateLayerInfo(); refreshLegend(false); });
 

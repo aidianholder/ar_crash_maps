@@ -7,51 +7,84 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
-  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
-  #map { position: absolute; inset: 0; }
-  .panel {
-    position: absolute; top: 12px; left: 12px; z-index: 1;
-    background: rgba(255,255,255,0.94); padding: 12px 14px; border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 13px; max-width: 240px;
+  /* The controls and legend are part of the page, not a floating overlay, so the
+     layout is a column: chrome at natural height, map taking whatever is left. */
+  *, *:before, *:after { box-sizing: border-box; }   /* else .wrap's padding overflows its 100% height */
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color: #111; }
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 12px 16px; }
+  h1 { font-size: 17px; line-height: 1.25; margin: 0 0 10px; }
+
+  /* Two filters side by side while each fits ~220px, stacked below that. */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 0 0 10px; }
+  /* Grow to share the row, but stop before the selects look absurdly wide. */
+  .field { flex: 1 1 220px; min-width: 0; max-width: 340px; }
+  .field label { display: block; font-weight: 600; font-size: 13px; margin: 0 0 4px; }
+  .field select {
+    display: block; width: 100%; padding: 6px 8px; font-family: inherit; font-size: 14px;
+    color: #111; background: #fff; border: 1px solid #bbb; border-radius: 4px;
   }
-  .panel h1 { font-size: 14px; margin: 0 0 8px; }
-  .panel label { font-weight: 600; display: block; margin-bottom: 4px; }
-  select { width: 100%; padding: 4px; font-size: 13px; }
-  .legend { margin-top: 10px; }
-  .legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
-  .legend .swatch { width: 16px; height: 12px; border: 1px solid rgba(0,0,0,0.2); }
+
+  .hint { text-align: center; font-size: 13px; color: #555; margin: 0 0 8px; }
+  #map { flex: 1 1 auto; min-height: 320px; position: relative; }
+
+  /* Bin-size badge, then the legend as one horizontal run; wraps on narrow screens. */
+  .legendwrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 0; }
+  .hexbadge svg { display: block; }
+  .hexbadge polygon { fill: #f2f2f2; stroke: #555; stroke-width: 1.5; }
+  .hexbadge text { font-family: inherit; font-size: 13px; font-weight: 600; fill: #111; }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0; font-size: 13px; }
+  .legend-title { font-weight: 600; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .legend .swatch { width: 18px; height: 12px; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.25); }
   .legend .dot { width: 12px; height: 12px; border-radius: 50%; }
-  .meta { margin-top: 10px; color: #444; font-size: 11px; line-height: 1.5; }
+  .meta { margin: 8px 0 0; color: #666; font-size: 12px; }
   .maplibregl-popup-content { font-size: 12px; }
 </style>
 </head>
 <body>
-<div id="map"></div>
-<div class="panel">
+<div class="wrap">
   <h1>Arkansas Crashes (2021–2025)</h1>
-  <label for="measure">Filter by</label>
-  <select id="measure">
-    <option value="crash_count">Crash count</option>
-    <option value="fatalities">Fatalities</option>
-    <option value="injuries">Serious injuries</option>
-    <option value="ped_count">Pedestrian</option>
-    <option value="cmv_count">Commercial vehicle</option>
-    <option value="impaired_count">Impaired / DUI</option>
-  </select>
-  <label for="year" style="margin-top:10px;">Year</label>
-  <select id="year">
-    <option value="0">All years</option>
-    <option value="2021">2021</option>
-    <option value="2022">2022</option>
-    <option value="2023">2023</option>
-    <option value="2024">2024</option>
-    <option value="2025">2025</option>
-  </select>
-  <div class="legend" id="legend"></div>
-  <div class="meta">
-    <div id="layerinfo">—</div>
-    <div>Hex bins &lt; z13, individual crashes at z13+.</div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="measure">Filter by</label>
+      <select id="measure">
+        <option value="crash_count">Crash count</option>
+        <option value="fatalities">Fatalities</option>
+        <option value="injuries">Serious injuries</option>
+        <option value="ped_count">Pedestrian</option>
+        <option value="cmv_count">Commercial vehicle</option>
+        <option value="impaired_count">Impaired / DUI</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="year">Year</label>
+      <select id="year">
+        <option value="0">All years</option>
+        <option value="2021">2021</option>
+        <option value="2022">2022</option>
+        <option value="2023">2023</option>
+        <option value="2024">2024</option>
+        <option value="2025">2025</option>
+      </select>
+    </div>
   </div>
+
+  <div class="hint">Zoom in for details on individual crashes</div>
+
+  <div id="map"></div>
+
+  <div class="legendwrap">
+    <!-- Pointy-top hexagon, matching the bins on the map; hidden at point zoom. -->
+    <span class="hexbadge" id="hexbadge" title="Current hexagon size">
+      <svg viewBox="0 0 46 52" width="46" height="52" role="img" aria-label="Hexagon bin size">
+        <polygon points="23,1 45,13.75 45,38.25 23,51 1,38.25 1,13.75"></polygon>
+        <text id="hexsize" x="23" y="26" dy="0.35em" text-anchor="middle">8 km</text>
+      </svg>
+    </span>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="meta">Source: Arkansas State Patrol via ARDOT</div>
 </div>
 
 <script>
@@ -110,7 +143,7 @@ const map = new maplibregl.Map({
   container: 'map',
   style: 'https://tiles.openfreemap.org/styles/positron',
   center: [-92.3, 34.9],   // central Arkansas
-  zoom: 6.4,
+  zoom: 7.8,
   maxBounds: [[-97.0, 31.5], [-87.5, 38.0]],
 });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -127,21 +160,21 @@ function fillColorExpr(measure) {
 
 function buildLegend(measure) {
   const b = MEASURES[measure].breaks;
-  const rows = RAMP.map((c, i) => {
+  const items = RAMP.map((c, i) => {
     const lo = b[i];
     const hi = b[i + 1];
     const label = hi ? `${lo.toLocaleString()}–${hi.toLocaleString()}` : `${lo.toLocaleString()}+`;
-    return `<div class="row"><span class="swatch" style="background:${c}"></span>${label}</div>`;
+    return `<span class="item"><span class="swatch" style="background:${c}"></span>${label}</span>`;
   }).join('');
   document.getElementById('legend').innerHTML =
-    `<label>${MEASURES[measure].label}</label>${rows}`;
+    `<span class="legend-title">${MEASURES[measure].label}</span>${items}`;
 }
 
 function buildSeverityLegend() {
-  const rows = [...SEVERITY, SEVERITY_DEFAULT].map(s =>
-    `<div class="row"><span class="swatch dot" style="background:${s.color}"></span>${s.label}</div>`
+  const items = [...SEVERITY, SEVERITY_DEFAULT].map(s =>
+    `<span class="item"><span class="swatch dot" style="background:${s.color}"></span>${s.label}</span>`
   ).join('');
-  document.getElementById('legend').innerHTML = `<label>Crash severity</label>${rows}`;
+  document.getElementById('legend').innerHTML = `<span class="legend-title">Crash severity</span>${items}`;
 }
 
 // Show the severity legend at point zoom, the measure legend at hex zoom.
@@ -329,11 +362,16 @@ map.on('load', () => {
   });
 });
 
+// Edge length of the hex layer currently in view; null at point zoom, where
+// nothing is binned and the badge is hidden (the severity legend takes over).
+function hexSizeLabel(z) {
+  return z < 8 ? '8 km' : z < 10 ? '3 km' : z < 12 ? '1 km' : z < POINT_ZOOM ? '400 m' : null;
+}
+
 function updateLayerInfo() {
-  const z = map.getZoom();
-  let active = z < 8 ? '8 km hexes' : z < 10 ? '3 km hexes' : z < 12 ? '1 km hexes'
-            : z < 13 ? '400 m hexes' : 'individual crashes';
-  document.getElementById('layerinfo').textContent = `z${z.toFixed(1)} · ${active}`;
+  const label = hexSizeLabel(map.getZoom());
+  document.getElementById('hexbadge').style.display = label ? '' : 'none';
+  if (label) document.getElementById('hexsize').textContent = label;
 }
 map.on('zoom', () => { updateLayerInfo(); refreshLegend(false); });
 

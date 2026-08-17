@@ -40,13 +40,20 @@ zoom past z13 for individual crashes.</p>
 <p>Optional attributes on the container:</p>
 
 <pre>&lt;div id="ar-crash-map"
-     data-height="600px"
+     data-height="460px"          &lt;!-- height of the MAP; controls and legend
+                                       sit outside it, so the block is taller --&gt;
      data-center="-94.16,36.06"   &lt;!-- lng,lat --&gt;
      data-zoom="10"
      data-measure="ped_count"     &lt;!-- crash_count | fatalities | injuries |
                                        ped_count | cmv_count | impaired_count --&gt;
      data-year="2024"
-     data-title="Pedestrian crashes in Fayetteville"&gt;&lt;/div&gt;</pre>
+     data-title="Pedestrian crashes in Fayetteville"
+     data-hint="Zoom in for details on individual crashes"
+     data-source="Source: Arkansas State Patrol via ARDOT"&gt;&lt;/div&gt;</pre>
+
+<p>Pass <code>data-title=""</code>, <code>data-hint=""</code> or
+<code>data-source=""</code> to drop any of those lines — useful when the article
+headline or a standing credit already says it.</p>
 
 <p>For more than one map on a page, give each container the
 <code>ar-crash-map</code> class instead of the id. To place a map yourself

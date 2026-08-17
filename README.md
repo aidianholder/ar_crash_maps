@@ -195,12 +195,21 @@ consumer is an article on arkansasonline.com). The whole integration is:
 <script src="https://maps.arkansasonline.com/crashes/embed.js"></script>
 ```
 
-It loads MapLibre, injects its own styles, builds the control panel and renders
-into the container. `web/embed-example.html` is a live preview and integration
+It loads MapLibre, injects its own styles, builds the controls and renders into
+the container. `web/embed-example.html` is a live preview and integration
 reference. Optional container attributes: `data-height`, `data-center="lng,lat"`,
-`data-zoom`, `data-measure`, `data-year`, `data-title`; several maps on one page
-use the `ar-crash-map` class instead of the id, and `ARCrashMap.init(el)` places
-one manually (for tabs or lazily-rendered modules).
+`data-zoom`, `data-measure`, `data-year`, `data-title`, `data-hint`,
+`data-source`; several maps on one page use the `ar-crash-map` class instead of
+the id, and `ARCrashMap.init(el)` places one manually (for tabs or lazily-rendered
+modules).
+
+The chrome is part of the page rather than a floating overlay — title, the two
+filters side by side (stacking when the container is narrow), a centered note,
+the map, then a hexagon badge showing the current bin size next to a horizontal
+legend, and a source line. `data-height` therefore sizes the **map**, not the
+whole block, which is taller by the height of the controls and legend.
+`data-title=""`, `data-hint=""` and `data-source=""` drop those lines. The badge
+hides itself at z13+, where crashes are drawn individually and nothing is binned.
 
 `index.html` can't simply be pasted into another page — the embed exists because
 three things in it only work on the map's own origin:

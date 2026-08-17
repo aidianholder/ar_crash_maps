@@ -19,12 +19,20 @@
  *      the host page's styles (or be restyled by them),
  *   3. the layout is container-relative rather than a full-viewport overlay.
  *
+ * Layout is page-integrated rather than a floating overlay: title, then the two
+ * filters side by side (stacking when the container is narrow), a centered note,
+ * the map, and a horizontal legend beneath it.
+ *
  * Options — as data-attributes on the container, or window.AR_CRASH_MAP_CONFIG:
- *   data-height="70vh"    container height (default 640px if the page sets none)
+ *   data-height="460px"   height of the MAP (default 640px). The controls and
+ *                         legend sit outside it, so the widget is taller than this.
  *   data-center="-92.3,34.9"
  *   data-zoom="6.4"
  *   data-measure="crash_count"   initial "Filter by" selection
  *   data-year="0"                initial year (0 = all years)
+ *   data-title="..."             heading above the filters; "" removes it
+ *   data-hint="..."              centered note above the map; "" removes it
+ *   data-source="..."            credit line under the legend; "" removes it
  * =========================================================================== */
 (function () {
   'use strict';
@@ -82,27 +90,39 @@
   // source order and collapse the absolutely-positioned map container to zero
   // height. Two classes (0,2,0) beats it regardless of load order.
   var CSS = [
-    '.arcm-root{position:relative;width:100%;min-height:240px;overflow:hidden;',
-      'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:#111;background:#fff;box-sizing:border-box}',
+    '.arcm-root{width:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;',
+      'font-size:14px;line-height:1.4;color:#111;box-sizing:border-box}',
     '.arcm-root *,.arcm-root *:before,.arcm-root *:after{box-sizing:border-box}',
-    '.arcm-root .arcm-map{position:absolute;top:0;right:0;bottom:0;left:0;width:auto;height:auto}',
-    '.arcm-root .arcm-panel{position:absolute;top:12px;left:12px;z-index:2;background:rgba(255,255,255,.94);',
-      'padding:12px 14px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:13px;max-width:240px;',
-      'max-height:calc(100% - 24px);overflow-y:auto}',
-    '.arcm-root .arcm-panel h2{font-size:14px;margin:0 0 8px;font-weight:700;line-height:1.25;color:#111;letter-spacing:0}',
-    '.arcm-root .arcm-panel label{font-weight:600;display:block;margin-bottom:4px;font-size:13px;color:#111;text-transform:none}',
-    '.arcm-root .arcm-panel select{width:100%;padding:4px;font-size:13px;font-family:inherit;color:#111;background:#fff;',
-      'border:1px solid #bbb;border-radius:3px;height:auto;margin:0;max-width:none;appearance:auto}',
-    '.arcm-root .arcm-panel select+label{margin-top:10px}',
-    '.arcm-root .arcm-legend{margin-top:10px}',
-    '.arcm-root .arcm-legend .arcm-row{display:flex;align-items:center;gap:6px;margin:2px 0}',
-    '.arcm-root .arcm-swatch{width:16px;height:12px;flex:0 0 auto;border:1px solid rgba(0,0,0,.2)}',
+    '.arcm-root .arcm-title{font-size:17px;font-weight:700;line-height:1.25;margin:0 0 10px;color:#111;letter-spacing:0}',
+
+    // Filters: side by side while each can hold ~220px, stacked below that.
+    '.arcm-root .arcm-controls{display:flex;flex-wrap:wrap;gap:10px 16px;margin:0 0 10px}',
+    // Grow to share the row, but stop before the selects look absurdly wide.
+    '.arcm-root .arcm-field{flex:1 1 220px;min-width:0;max-width:340px}',
+    '.arcm-root .arcm-field label{display:block;font-weight:600;font-size:13px;margin:0 0 4px;color:#111;text-transform:none}',
+    '.arcm-root .arcm-field select{display:block;width:100%;max-width:none;margin:0;padding:6px 8px;',
+      'font-family:inherit;font-size:14px;line-height:1.3;color:#111;background:#fff;border:1px solid #bbb;',
+      'border-radius:4px;height:auto;appearance:auto}',
+
+    '.arcm-root .arcm-hint{text-align:center;font-size:13px;color:#555;margin:0 0 8px}',
+    '.arcm-root .arcm-map{position:relative;width:100%;height:640px}',
+
+    // Bin-size badge, then the legend as one horizontal run, wrapping when narrow.
+    '.arcm-root .arcm-legendwrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0 0}',
+    '.arcm-root .arcm-hexbadge svg{display:block}',
+    '.arcm-root .arcm-hexbadge polygon{fill:#f2f2f2;stroke:#555;stroke-width:1.5}',
+    '.arcm-root .arcm-hexbadge text{font-family:inherit;font-size:13px;font-weight:600;fill:#111}',
+    '.arcm-root .arcm-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0;font-size:13px}',
+    '.arcm-root .arcm-legend-title{font-weight:600}',
+    '.arcm-root .arcm-item{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}',
+    '.arcm-root .arcm-swatch{width:18px;height:12px;flex:0 0 auto;border:1px solid rgba(0,0,0,.25)}',
     '.arcm-root .arcm-swatch.arcm-dot{width:12px;height:12px;border-radius:50%}',
-    '.arcm-root .arcm-meta{margin-top:10px;color:#444;font-size:11px;line-height:1.5}',
+    '.arcm-root .arcm-meta{margin:8px 0 0;color:#666;font-size:12px;line-height:1.5}',
+
     '.arcm-root .maplibregl-popup-content{font-size:12px;font-family:inherit;color:#111;line-height:1.45}',
     '.arcm-root .maplibregl-popup-content b{font-weight:700}',
-    '.arcm-root .arcm-note{position:absolute;left:12px;bottom:34px;z-index:2;max-width:280px;padding:8px 10px;',
-      'background:rgba(255,255,255,.94);border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:12px;color:#900}',
+    '.arcm-root .arcm-note{margin:10px 0 0;padding:8px 10px;background:#fff3f3;border:1px solid #f0c0c0;',
+      'border-radius:6px;font-size:13px;color:#900}',
   ].join('');
 
   function injectCSS() {
@@ -159,10 +179,13 @@
     return {
       height:  d.height  || g.height  || null,
       center:  center,
-      zoom:    d.zoom    != null ? +d.zoom : (g.zoom != null ? g.zoom : 6.4),
+      zoom:    d.zoom    != null ? +d.zoom : (g.zoom != null ? g.zoom : 7.8),
       measure: d.measure || g.measure || 'crash_count',
       year:    d.year    != null ? String(d.year) : String(g.year != null ? g.year : 0),
-      title:   d.title   || g.title   || 'Arkansas Crashes (2021–2025)',
+      // Pass data-title="" (or data-hint="", data-source="") to omit a line entirely.
+      title:   d.title   != null ? d.title : (g.title != null ? g.title : 'Arkansas Crashes (2021–2025)'),
+      hint:    d.hint    != null ? d.hint  : (g.hint  != null ? g.hint  : 'Zoom in for details on individual crashes'),
+      source:  d.source  != null ? d.source : (g.source != null ? g.source : 'Source: Arkansas State Patrol via ARDOT'),
     };
   }
 
@@ -171,53 +194,64 @@
     root.classList.add('arcm-root');
     root.innerHTML = '';
 
-    // Only impose a height if the host page hasn't given the container one.
-    if (opts.height) root.style.height = opts.height;
-    else if (root.getBoundingClientRect().height < 50) root.style.height = '640px';
-
-    var mapEl = el('div', 'arcm-map');
-    root.appendChild(mapEl);
-
     // Unique ids so <label for> stays correct with several maps on one page.
     var uid = 'arcm-' + Math.random().toString(36).slice(2, 8);
-    var panel = el('div', 'arcm-panel');
-    panel.appendChild(el('h2', null, esc(opts.title)));
 
-    var measureLabel = el('label', null, 'Filter by');
-    measureLabel.htmlFor = uid + '-measure';
-    var measureSel = document.createElement('select');
-    measureSel.id = uid + '-measure';
-    MEASURE_ORDER.forEach(function (k) {
-      var o = document.createElement('option');
-      o.value = k; o.textContent = MEASURES[k].label;
-      measureSel.appendChild(o);
-    });
-    measureSel.value = MEASURES[opts.measure] ? opts.measure : 'crash_count';
+    // A labelled <select> in its own flex cell.
+    function field(id, labelText, options, value) {
+      var wrap = el('div', 'arcm-field');
+      var label = el('label', null, labelText);
+      label.htmlFor = id;
+      var sel = document.createElement('select');
+      sel.id = id;
+      options.forEach(function (o) {
+        var opt = document.createElement('option');
+        opt.value = o[0]; opt.textContent = o[1];
+        sel.appendChild(opt);
+      });
+      sel.value = value;
+      wrap.appendChild(label);
+      wrap.appendChild(sel);
+      return { wrap: wrap, select: sel };
+    }
 
-    var yearLabel = el('label', null, 'Year');
-    yearLabel.htmlFor = uid + '-year';
-    var yearSel = document.createElement('select');
-    yearSel.id = uid + '-year';
-    YEARS.forEach(function (y) {
-      var o = document.createElement('option');
-      o.value = y[0]; o.textContent = y[1];
-      yearSel.appendChild(o);
-    });
-    yearSel.value = YEARS.some(function (y) { return y[0] === opts.year; }) ? opts.year : '0';
+    if (opts.title) root.appendChild(el('h2', 'arcm-title', esc(opts.title)));
 
+    var controls = el('div', 'arcm-controls');
+    var measure = field(uid + '-measure', 'Filter by',
+      MEASURE_ORDER.map(function (k) { return [k, MEASURES[k].label]; }),
+      MEASURES[opts.measure] ? opts.measure : 'crash_count');
+    var year = field(uid + '-year', 'Year', YEARS,
+      YEARS.some(function (y) { return y[0] === opts.year; }) ? opts.year : '0');
+    controls.appendChild(measure.wrap);
+    controls.appendChild(year.wrap);
+    root.appendChild(controls);
+    var measureSel = measure.select, yearSel = year.select;
+
+    if (opts.hint) root.appendChild(el('div', 'arcm-hint', esc(opts.hint)));
+
+    // data-height sizes the MAP, not the whole widget — the controls and legend
+    // now sit outside it, so sizing the widget would squeeze the map instead.
+    var mapEl = el('div', 'arcm-map');
+    if (opts.height) mapEl.style.height = opts.height;
+    root.appendChild(mapEl);
+
+    // Bin-size badge beside the legend: a pointy-top hexagon matching the map's
+    // bins, with the current edge length inside it.
+    var legendWrap = el('div', 'arcm-legendwrap');
+    var badge = el('span', 'arcm-hexbadge');
+    badge.title = 'Current hexagon size';
+    badge.innerHTML =
+      '<svg viewBox="0 0 46 52" width="46" height="52" role="img" aria-label="Hexagon bin size">' +
+      '<polygon points="23,1 45,13.75 45,38.25 23,51 1,38.25 1,13.75"></polygon>' +
+      '<text x="23" y="26" dy="0.35em" text-anchor="middle">8 km</text></svg>';
+    var hexText = badge.querySelector('text');
     var legend = el('div', 'arcm-legend');
-    var meta = el('div', 'arcm-meta');
-    var layerinfo = el('div', null, '—');
-    meta.appendChild(layerinfo);
-    meta.appendChild(el('div', null, 'Hex bins &lt; z13, individual crashes at z13+.'));
+    legendWrap.appendChild(badge);
+    legendWrap.appendChild(legend);
+    root.appendChild(legendWrap);
 
-    panel.appendChild(measureLabel);
-    panel.appendChild(measureSel);
-    panel.appendChild(yearLabel);
-    panel.appendChild(yearSel);
-    panel.appendChild(legend);
-    panel.appendChild(meta);
-    root.appendChild(panel);
+    if (opts.source) root.appendChild(el('div', 'arcm-meta', esc(opts.source)));
 
     var map = new maplibregl.Map({
       container: mapEl,
@@ -240,19 +274,19 @@
 
     function buildLegend(measure) {
       var b = MEASURES[measure].breaks;
-      var rows = RAMP.map(function (c, i) {
+      var items = RAMP.map(function (c, i) {
         var lo = b[i], hi = b[i + 1];
         var label = hi ? num(lo) + '–' + num(hi) : num(lo) + '+';
-        return '<div class="arcm-row"><span class="arcm-swatch" style="background:' + c + '"></span>' + label + '</div>';
+        return '<span class="arcm-item"><span class="arcm-swatch" style="background:' + c + '"></span>' + label + '</span>';
       }).join('');
-      legend.innerHTML = '<label>' + MEASURES[measure].label + '</label>' + rows;
+      legend.innerHTML = '<span class="arcm-legend-title">' + MEASURES[measure].label + '</span>' + items;
     }
 
     function buildSeverityLegend() {
-      var rows = SEVERITY.concat([SEVERITY_DEFAULT]).map(function (s) {
-        return '<div class="arcm-row"><span class="arcm-swatch arcm-dot" style="background:' + s.color + '"></span>' + s.label + '</div>';
+      var items = SEVERITY.concat([SEVERITY_DEFAULT]).map(function (s) {
+        return '<span class="arcm-item"><span class="arcm-swatch arcm-dot" style="background:' + s.color + '"></span>' + s.label + '</span>';
       }).join('');
-      legend.innerHTML = '<label>Crash severity</label>' + rows;
+      legend.innerHTML = '<span class="arcm-legend-title">Crash severity</span>' + items;
     }
 
     var legendMode = null;
@@ -297,11 +331,13 @@
       });
     }
 
+    // Edge length of the hex layer currently in view; null at point zoom, where
+    // nothing is binned and the badge is hidden (severity legend takes over).
     function updateLayerInfo() {
       var z = map.getZoom();
-      var active = z < 8 ? '8 km hexes' : z < 10 ? '3 km hexes' : z < 12 ? '1 km hexes'
-                 : z < 13 ? '400 m hexes' : 'individual crashes';
-      layerinfo.textContent = 'z' + z.toFixed(1) + ' · ' + active;
+      var label = z < 8 ? '8 km' : z < 10 ? '3 km' : z < 12 ? '1 km' : z < POINT_ZOOM ? '400 m' : null;
+      badge.style.display = label ? '' : 'none';
+      if (label) hexText.textContent = label;
     }
 
     map.on('load', function () {
